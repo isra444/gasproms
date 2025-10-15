@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: hsl(210, 20%, 53%);
+  --panel: #43576e;
+  --muted: #a0aab6;
+  --text: #ffffff;
+  --text-muted: #ffffff;
+  --primary: #7aa2ff;
+  --danger: #ff6b6b;
+  --success: #5ad092;
+}
+
+.dark {
+  color-scheme: dark;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+@layer base {
+  body {
+    @apply bg-[var(--bg)] text-[var(--text)] antialiased;
+  }
+}

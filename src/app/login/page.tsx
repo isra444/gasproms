@@ -19,7 +19,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 async function withTimeout<T>(
   p: PromiseLike<T>,
   ms = 15000,
-  tag = "withTimeout"
+  tag = "withTimeout",
 ): Promise<T> {
   let t: any;
   const timeout = new Promise<never>((_, reject) => {
@@ -38,7 +38,8 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false); // evita doble submit
 
-  const { setUser, setRole, setRoles, startAuthLoading, stopAuthLoading } = useUserStore();
+  const { setUser, setRole, setRoles, startAuthLoading, stopAuthLoading } =
+    useUserStore();
 
   const {
     register,
@@ -79,7 +80,7 @@ export default function LoginPage() {
           password: data.password,
         }),
         15000,
-        "auth.signInWithPassword"
+        "auth.signInWithPassword",
       );
 
       if (authError) {
@@ -103,7 +104,7 @@ export default function LoginPage() {
       const { data: rolesRows, error: rolesErr } = await withTimeout(
         supabase.from("roles_usuario").select("rol").eq("usuario_id", user.id),
         12000,
-        "select roles_usuario"
+        "select roles_usuario",
       );
 
       if (rolesErr) {
@@ -111,7 +112,11 @@ export default function LoginPage() {
       }
 
       const roles: string[] = (rolesRows ?? [])
-        .map((r: any) => String(r.rol || "").toLowerCase().trim())
+        .map((r: any) =>
+          String(r.rol || "")
+            .toLowerCase()
+            .trim(),
+        )
         .filter(Boolean);
 
       const primaryRole = roles[0] ?? "";
@@ -128,7 +133,9 @@ export default function LoginPage() {
 
       // 5) Redirección por rol
       if (!primaryRole) {
-        setError("Tu cuenta aún no tiene rol asignado. Contacta con el administrador.");
+        setError(
+          "Tu cuenta aún no tiene rol asignado. Contacta con el administrador.",
+        );
         return;
       }
       redirectByRole(primaryRole);
@@ -141,56 +148,81 @@ export default function LoginPage() {
     }
   };
 
-  const disabled = useMemo(() => isSubmitting || saving, [isSubmitting, saving]);
+  const disabled = useMemo(
+    () => isSubmitting || saving,
+    [isSubmitting, saving],
+  );
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
-      <div className="w-full max-w-4xl bg-[var(--panel)] shadow-lg rounded-2xl flex overflow-hidden text-[var(--text)]">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--bg)]">
+      <div className="flex w-full max-w-4xl overflow-hidden rounded-2xl bg-[var(--panel)] text-[var(--text)] shadow-lg">
         {/* Columna izquierda */}
-        <div className="hidden md:flex flex-col justify-center items-center w-1/2 bg-[var(--bg)] border-r border-[var(--muted)] p-8">
-          <img src="/logo.png" alt="Logo" className="w-24 h-24 mb-6 rounded-full shadow" />
-          <h2 className="text-2xl font-bold mb-4">Bienvenido</h2>
-          <p className="text-[var(--text-muted)] text-center">
+        <div className="hidden w-1/2 flex-col items-center justify-center border-r border-[var(--muted)] bg-[var(--bg)] p-8 md:flex">
+          <img
+            src="/logo.png"
+            alt="Logo"
+            className="w-100 mb-6 h-20 rounded-md shadow"
+          />
+          <h2 className="mb-4 text-2xl font-bold">Bienvenido</h2>
+          <p className="text-center text-[var(--text-muted)]">
             Accede con tu correo y contraseña. Si aún no tienes rol asignado,
             espera a que el administrador lo configure.
           </p>
-          <img src="/illustration.png" alt="Ilustración" className="w-40 h-40 mt-8" />
+          <img
+            src="/illustration.png"
+            alt="Ilustración"
+            className="mt-8 h-40 w-40"
+          />
         </div>
 
         {/* Columna derecha (formulario) */}
-        <div className="w-full md:w-1/2 p-10 flex flex-col justify-center">
-          <h2 className="text-3xl font-bold mb-6 text-center">Iniciar sesión</h2>
+        <div className="flex w-full flex-col justify-center p-10 md:w-1/2">
+          <h2 className="mb-6 text-center text-3xl font-bold">
+            Iniciar sesión
+          </h2>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            className="space-y-5"
+            noValidate
+          >
             <div>
-              <label className="block mb-1">Correo</label>
+              <label className="mb-1 block">Correo</label>
               <input
                 type="email"
                 {...register("email")}
-                className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+                className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
                 placeholder="ejemplo@correo.com"
                 autoComplete="email"
                 inputMode="email"
                 required
               />
-              {errors.email && <p className="text-[var(--danger)] text-sm">{errors.email.message}</p>}
+              {errors.email && (
+                <p className="text-sm text-[var(--danger)]">
+                  {errors.email.message}
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block mb-1">Contraseña</label>
+              <label className="mb-1 block">Contraseña</label>
               <input
                 type="password"
                 {...register("password")}
-                className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+                className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
                 placeholder="********"
                 autoComplete="current-password"
                 required
               />
-              {errors.password && <p className="text-[var(--danger)] text-sm">{errors.password.message}</p>}
+              {errors.password && (
+                <p className="text-sm text-[var(--danger)]">
+                  {errors.password.message}
+                </p>
+              )}
             </div>
 
             {error && (
-              <div className="rounded-md border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-3 text-sm">
+              <div className="border-[var(--danger)]/40 bg-[var(--danger)]/10 rounded-md border p-3 text-sm">
                 {error}
               </div>
             )}
@@ -198,13 +230,13 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={disabled}
-              className="w-full bg-[var(--primary)] text-white py-2 rounded-lg hover:opacity-90 transition disabled:opacity-50"
+              className="w-full rounded-lg bg-[var(--primary)] py-2 text-white transition hover:opacity-90 disabled:opacity-50"
             >
               {disabled ? "Ingresando..." : "Ingresar"}
             </button>
           </form>
 
-          <div className="flex justify-between items-center mt-4 text-sm text-[var(--text-muted)]">
+          <div className="mt-4 flex items-center justify-between text-sm text-[var(--text-muted)]">
             <a href="/reset-password" className="hover:underline">
               ¿Olvidaste tu contraseña?
             </a>

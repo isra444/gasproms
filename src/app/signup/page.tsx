@@ -44,9 +44,7 @@ export default function SignupPage() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<SignupForm>({
-    resolver: zodResolver(signupSchema),
-  });
+  } = useForm<SignupForm>({ resolver: zodResolver(signupSchema) });
 
   const onSubmit = async (data: SignupForm) => {
     setError(null);
@@ -56,27 +54,39 @@ export default function SignupPage() {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
+      options: {
+        emailRedirectTo:
+          typeof window !== "undefined"
+            ? `${location.origin}/auth/callback`
+            : undefined,
+        data: { nombre_completo: data.nombre_completo }, // útil para el trigger
+      },
     });
+
     if (authError) {
+      console.error("Error en signUp:", authError.message);
       setError(authError.message);
       return;
     }
 
-    // 2) Insertar/asegurar fila en 'usuarios'
-    const user = authData.user;
-    if (user) {
-      const { data: existente } = await supabase
-        .from("usuarios")
-        .select("id")
-        .eq("correo", data.email)
-        .maybeSingle();
+    const newUser = authData.user;
+    if (!newUser) {
+      setError("No se obtuvo el usuario después del registro.");
+      return;
+    }
 
-      if (!existente) {
-        const { error: dbError } = await supabase.from("usuarios").insert([
-          {
-            id: user.id,
+    // 2) (Opcional) Completar campos en `usuarios` SOLO si la sesión es del usuario recién creado
+    //    Si tu proyecto requiere confirmar email, no habrá sesión aún → el trigger ya creó el perfil.
+    try {
+      const { data: sessData } = await supabase.auth.getSession();
+      const sessionUserId = sessData.session?.user?.id;
+
+      if (sessionUserId && sessionUserId === newUser.id) {
+        // Actualizamos campos “extra” del perfil ya creado por el trigger
+        const { error: updateErr } = await supabase
+          .from("usuarios")
+          .update({
             nombre_completo: data.nombre_completo,
-            correo: data.email,
             celular: data.celular ?? null,
             género: data.género ?? null,
             profesión: data.profesión ?? null,
@@ -85,20 +95,32 @@ export default function SignupPage() {
             expedido: data.expedido,
             fecha_inscripción: new Date().toISOString().split("T")[0],
             estado: "activo",
-          },
-        ]);
-        if (dbError) {
-          console.error("Error insertando en usuarios:", dbError.message);
-          setError("Error registrando usuario en la base de datos.");
-          return;
+          })
+          .eq("id", newUser.id);
+
+        if (updateErr) {
+          // No bloqueamos el registro si falla el update; el admin igual verá al usuario
+          console.warn(
+            "No se pudo actualizar campos extra del perfil:",
+            updateErr.message,
+          );
         }
+      } else {
+        // Sin sesión o sesión distinta → omitimos update; el trigger ya creó el perfil
+        console.info(
+          "Sin sesión del usuario recién creado; se omite update del perfil.",
+        );
       }
+    } catch (e) {
+      console.warn(
+        "No se pudo verificar/actualizar el perfil del usuario nuevo:",
+        e,
+      );
     }
 
-    // 3) Aviso de confirmación
+    // 3) Mensaje y redirección
     setSuccess(
-      "✅ Registro exitoso. Revisa tu correo y confirma tu cuenta. ATT: Gasproms"
-      
+      "✅ Registro exitoso. Revisa tu correo y confirma tu cuenta. ATT: Gasproms",
     );
     setTimeout(() => {
       window.location.href = "/login";
@@ -106,27 +128,27 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
-      <div className="w-full max-w-2xl bg-[var(--panel)] p-8 shadow-lg rounded-2xl text-[var(--text)]">
-        <h2 className="text-2xl font-bold text-center mb-6">Crear cuenta</h2>
+    <div className="flex min-h-screen items-center justify-center bg-[var(--bg)]">
+      <div className="w-full max-w-2xl rounded-2xl bg-[var(--panel)] p-8 text-[var(--text)] shadow-lg">
+        <h2 className="mb-6 text-center text-2xl font-bold">Crear cuenta</h2>
 
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="grid grid-cols-1 md:grid-cols-2 gap-4"
+          className="grid grid-cols-1 gap-4 md:grid-cols-2"
         >
           {/* Nombre */}
           <div className="md:col-span-2">
-            <label className="block text-[var(--text)] mb-1">
+            <label className="mb-1 block text-[var(--text)]">
               Nombre completo
             </label>
             <input
               type="text"
               {...register("nombre_completo")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
               placeholder="Tu nombre"
             />
             {errors.nombre_completo && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.nombre_completo.message}
               </p>
             )}
@@ -134,15 +156,15 @@ export default function SignupPage() {
 
           {/* Correo */}
           <div>
-            <label className="block text-[var(--text)] mb-1">Correo</label>
+            <label className="mb-1 block text-[var(--text)]">Correo</label>
             <input
               type="email"
               {...register("email")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
               placeholder="ejemplo@correo.com"
             />
             {errors.email && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.email.message}
               </p>
             )}
@@ -150,15 +172,15 @@ export default function SignupPage() {
 
           {/* Contraseña */}
           <div>
-            <label className="block text-[var(--text)] mb-1">Contraseña</label>
+            <label className="mb-1 block text-[var(--text)]">Contraseña</label>
             <input
               type="password"
               {...register("password")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
               placeholder="********"
             />
             {errors.password && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.password.message}
               </p>
             )}
@@ -166,15 +188,15 @@ export default function SignupPage() {
 
           {/* Celular */}
           <div>
-            <label className="block text-[var(--text)] mb-1">Celular</label>
+            <label className="mb-1 block text-[var(--text)]">Celular</label>
             <input
               type="text"
               {...register("celular")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
               placeholder="Ej: 78912345"
             />
             {errors.celular && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.celular.message}
               </p>
             )}
@@ -182,10 +204,10 @@ export default function SignupPage() {
 
           {/* Género */}
           <div>
-            <label className="block text-[var(--text)] mb-1">Género</label>
+            <label className="mb-1 block text-[var(--text)]">Género</label>
             <select
               {...register("género")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] focus:ring-2 focus:ring-[var(--primary)]"
               defaultValue=""
             >
               <option value="">Seleccione…</option>
@@ -194,7 +216,7 @@ export default function SignupPage() {
               <option value="otro">Otro</option>
             </select>
             {errors.género && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.género.message}
               </p>
             )}
@@ -202,15 +224,15 @@ export default function SignupPage() {
 
           {/* Profesión */}
           <div>
-            <label className="block text-[var(--text)] mb-1">Profesión</label>
+            <label className="mb-1 block text-[var(--text)]">Profesión</label>
             <input
               type="text"
               {...register("profesión")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
               placeholder="Ej: Ingeniero(a)"
             />
             {errors.profesión && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.profesión.message}
               </p>
             )}
@@ -218,17 +240,17 @@ export default function SignupPage() {
 
           {/* Universidad */}
           <div>
-            <label className="block text-[var(--text)] mb-1">
+            <label className="mb-1 block text-[var(--text)]">
               Universidad de titulación
             </label>
             <input
               type="text"
               {...register("universidad_titulado")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
               placeholder="Ej: UMSA"
             />
             {errors.universidad_titulado && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.universidad_titulado.message}
               </p>
             )}
@@ -236,17 +258,17 @@ export default function SignupPage() {
 
           {/* Cédula */}
           <div>
-            <label className="block text-[var(--text)] mb-1">
+            <label className="mb-1 block text-[var(--text)]">
               Cédula de identidad
             </label>
             <input
               type="text"
               {...register("cedula")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)] placeholder-[var(--text-muted)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--primary)]"
               placeholder="Ej: 12345678"
             />
             {errors.cedula && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.cedula.message}
               </p>
             )}
@@ -254,10 +276,10 @@ export default function SignupPage() {
 
           {/* Expedido */}
           <div>
-            <label className="block text-[var(--text)] mb-1">Expedido</label>
+            <label className="mb-1 block text-[var(--text)]">Expedido</label>
             <select
               {...register("expedido")}
-              className="w-full px-4 py-2 border border-[var(--muted)] rounded-lg focus:ring-2 focus:ring-[var(--primary)] bg-[var(--bg)] text-[var(--text)]"
+              className="w-full rounded-lg border border-[var(--muted)] bg-[var(--bg)] px-4 py-2 text-[var(--text)] focus:ring-2 focus:ring-[var(--primary)]"
               defaultValue=""
             >
               <option value="" disabled>
@@ -270,7 +292,7 @@ export default function SignupPage() {
               ))}
             </select>
             {errors.expedido && (
-              <p className="text-[var(--danger)] text-sm">
+              <p className="text-sm text-[var(--danger)]">
                 {errors.expedido.message}
               </p>
             )}
@@ -279,12 +301,12 @@ export default function SignupPage() {
           {/* Mensajes */}
           {error && (
             <div className="md:col-span-2">
-              <p className="text-[var(--danger)] text-sm">{error}</p>
+              <p className="text-sm text-[var(--danger)]">{error}</p>
             </div>
           )}
           {success && (
             <div className="md:col-span-2">
-              <p className="text-[var(--success)] text-sm">{success}</p>
+              <p className="text-sm text-[var(--success)]">{success}</p>
             </div>
           )}
 
@@ -293,14 +315,14 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-[var(--primary)] text-white py-2 rounded-lg hover:opacity-90 transition disabled:opacity-50"
+              className="w-full rounded-lg bg-[var(--primary)] py-2 text-white transition hover:opacity-90 disabled:opacity-50"
             >
               {isSubmitting ? "Creando..." : "Registrarse"}
             </button>
           </div>
         </form>
 
-        <p className="text-sm text-[var(--text-muted)] mt-4 text-center">
+        <p className="mt-4 text-center text-sm text-[var(--text-muted)]">
           ¿Ya tienes cuenta?{" "}
           <a href="/login" className="text-[var(--primary)] hover:underline">
             Inicia sesión

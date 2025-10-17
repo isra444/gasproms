@@ -1,29 +1,32 @@
-// lib/supabaseClient.ts
-import { createClient } from "@supabase/supabase-js";
+// src/lib/supabaseClient.ts
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Lee variables de entorno públicas
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+/* ================================
+   ENV SEGURO (no romper en SSR)
+================================== */
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    "Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY"
-  );
+// No lances error al importar en SSR; valida solo cuando realmente crees el cliente
+function assertEnv() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error(
+      "Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY"
+    );
+  }
 }
 
-/**
- * fetch con timeout para evitar requests que nunca terminan.
- * Usa AbortController y respeta el signal entrante si existe.
- */
+/* ==========================================
+   fetch con timeout (se integra a supabase)
+========================================== */
 async function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit = {},
-  timeoutMs = 15000 // 15s por defecto; ajusta si lo necesitas
+  timeoutMs = 15000
 ) {
   const controller = new AbortController();
   const userSignal = init.signal as AbortSignal | undefined;
 
-  // Si ya viene un signal, encadenamos abortos
   const onAbort = () => controller.abort();
   if (userSignal) {
     if (userSignal.aborted) controller.abort();
@@ -40,24 +43,58 @@ async function fetchWithTimeout(
   }
 }
 
-// ✅ Exporta una única instancia con opciones robustas
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    flowType: "pkce",
-  },
-  // Aplica el fetch con timeout a TODAS las llamadas (auth, db, storage)
-  global: {
-    fetch: (input, init) => fetchWithTimeout(input, init),
-  },
-  // (Opcional) Si usas un schema distinto a 'public', cámbialo aquí
-  db: { schema: "public" },
-  // (Opcional) Limita eventos realtime si no los usas mucho
-  realtime: {
-    params: {
-      eventsPerSecond: 2,
-    },
-  },
-});
+/* ==========================================
+   SINGLETON + control de auto-refresh
+========================================== */
+declare global {
+  // eslint-disable-next-line no-var
+  var __supabase__: SupabaseClient | undefined;
+  // eslint-disable-next-line no-var
+  var __supabaseVisBound__: boolean | undefined;
+}
+
+function createSupabaseSingleton(): SupabaseClient {
+  assertEnv();
+
+  if (!globalThis.__supabase__) {
+    globalThis.__supabase__ = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce",
+        // storage usa localStorage por defecto en browser;
+        // no setear en SSR para evitar ReferenceError
+      },
+      global: {
+        fetch: (input, init) => fetchWithTimeout(input, init),
+      },
+      db: { schema: "public" },
+      realtime: {
+        params: { eventsPerSecond: 2 },
+      },
+    });
+
+    // Atamos el manejador de visibilidad **una sola vez** (solo en browser)
+    if (typeof window !== "undefined" && !globalThis.__supabaseVisBound__) {
+      const onVis = () => {
+        if (document.visibilityState === "visible") {
+          globalThis.__supabase__!.auth.startAutoRefresh();
+        } else {
+          globalThis.__supabase__!.auth.stopAutoRefresh();
+        }
+      };
+      document.addEventListener("visibilitychange", onVis);
+      // Ejecuta una primera vez según el estado actual
+      onVis();
+      globalThis.__supabaseVisBound__ = true;
+    }
+  }
+
+  return globalThis.__supabase__;
+}
+
+/* ==========================================
+   Export público
+========================================== */
+export const supabase = createSupabaseSingleton();
